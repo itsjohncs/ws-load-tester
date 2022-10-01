@@ -1,4 +1,4 @@
-use std::{env, rc::Rc, sync::Arc, time::Duration};
+use std::{env, panic, process, rc::Rc, sync::Arc, time::Duration};
 
 use futures_util::{future, pin_mut, StreamExt, SinkExt};
 use rand::Rng;
@@ -7,11 +7,19 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 #[tokio::main]
 async fn main() {
+    let orig_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        // invoke the default handler and exit the process
+        orig_hook(panic_info);
+        process::exit(1);
+    }));
+
     let connect_addr = env::args().nth(1).unwrap();
     let max_connections: i32 = env::args().nth(2).unwrap().parse().unwrap();
 
     let mut handles = vec![];
     for _ in 0..max_connections {
+        tokio::time::sleep(Duration::from_millis(10)).await;
         let url = url::Url::parse(&connect_addr).unwrap();
         handles.push(tokio::spawn(async move {
             let mut connection = connect_async(url.as_ref()).await.unwrap().0;
@@ -29,6 +37,8 @@ async fn main() {
             }
         }));
     }
+
+    println!("All connections started!");
 
     futures::future::join_all(handles).await;
 }
